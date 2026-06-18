@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Upload, Image, FileText, Tag, DollarSign, Shield, Check, X } from 'lucide-react'
+import { Upload, Image, FileText, Tag, DollarSign, Shield, Check, X, ExternalLink } from 'lucide-react'
 import { useStore } from '@/store'
-import { CATEGORY_LABELS, Category } from '@/types'
+import { CATEGORY_LABELS, Category, LicenseType } from '@/types'
 
 export default function UploadPage() {
-  const { products } = useStore()
+  const { addProduct, products } = useStore()
+  const navigate = useNavigate()
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -22,11 +24,37 @@ export default function UploadPage() {
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
   const [previewImages, setPreviewImages] = useState<string[]>([])
   const [submitted, setSubmitted] = useState(false)
+  const [newProductId, setNewProductId] = useState('')
 
   const categories: Category[] = ['figma', 'ppt', 'font', 'icon', 'code', 'notion', 'other']
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const tagsArr = form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : []
+    const licenseTypes: LicenseType[] = []
+    if (form.hasPersonal) licenseTypes.push('personal')
+    if (form.hasCommercial) licenseTypes.push('commercial')
+
+    const newId = 'p' + (products.length + 100)
+    const thumbUrl = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(form.title + ' preview') + '&image_size=landscape_16_9'
+
+    addProduct({
+      title: form.title,
+      description: form.description,
+      category: form.category,
+      tags: tagsArr.length > 0 ? tagsArr : ['原创作品'],
+      pricePersonal: form.isFree ? 0 : form.pricePersonal,
+      priceCommercial: form.isFree ? 0 : form.priceCommercial,
+      isFree: form.isFree,
+      licenseTypes: licenseTypes.length > 0 ? licenseTypes : ['personal'],
+      thumbnails: [thumbUrl],
+      previewImages: [thumbUrl],
+      fileFormat: form.fileFormat || '.zip',
+      fileSize: '未知',
+      compatibility: form.compatibility || '全平台',
+    })
+
+    setNewProductId(newId)
     setSubmitted(true)
   }
 
@@ -41,15 +69,27 @@ export default function UploadPage() {
           <div className="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-6">
             <Check className="w-10 h-10 text-emerald-400" />
           </div>
-          <h2 className="text-2xl font-display font-bold text-surface-100 mb-3">作品已提交</h2>
-          <p className="text-surface-400 mb-6">您的作品已进入审核队列，通常 1-3 个工作日内完成审核。审核通过后将自动上架。</p>
-          <div className="flex gap-3 justify-center">
-            <button onClick={() => setSubmitted(false)} className="btn-secondary text-sm">
-              继续上传
+          <h2 className="text-2xl font-display font-bold text-surface-100 mb-3">作品发布成功</h2>
+          <p className="text-surface-400 mb-6">您的作品已成功上架，现在可以在首页、浏览页和创作者后台查看。</p>
+          <div className="flex flex-col gap-3">
+            <Link
+              to={`/product/${newProductId}`}
+              className="btn-primary flex items-center justify-center gap-2 text-sm"
+            >
+              <ExternalLink className="w-4 h-4" /> 查看作品详情
+            </Link>
+            <Link
+              to="/dashboard"
+              className="btn-secondary flex items-center justify-center gap-2 text-sm"
+            >
+              前往创作者后台
+            </Link>
+            <button
+              onClick={() => { setSubmitted(false); setForm({ ...form, title: '', description: '' }) }}
+              className="text-sm text-surface-500 hover:text-surface-300 transition-colors"
+            >
+              继续上传其他作品
             </button>
-            <a href="/dashboard" className="btn-primary text-sm inline-block">
-              查看后台
-            </a>
           </div>
         </motion.div>
       </div>

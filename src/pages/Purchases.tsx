@@ -1,15 +1,39 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { Download, FileCheck, Shield, Eye } from 'lucide-react'
 import { useStore } from '@/store'
-import { LICENSE_LABELS } from '@/types'
+import { LICENSE_LABELS, LicenseType } from '@/types'
+import DownloadModal from '@/components/DownloadModal'
+
+interface DownloadItem {
+  title: string
+  price: number
+  licenseType: LicenseType
+  credential: string
+  fileFormat: string
+  fileSize: string
+}
 
 export default function PurchasesPage() {
   const { orders, products } = useStore()
+  const [modalOpen, setModalOpen] = useState(false)
+  const [downloadItem, setDownloadItem] = useState<DownloadItem | null>(null)
 
-  const getProductThumbnail = (productId: string) => {
-    const product = products.find((p) => p.id === productId)
-    return product?.thumbnails[0] || ''
+  const getProduct = (productId: string) => products.find((p) => p.id === productId)
+  const getProductThumbnail = (productId: string) => getProduct(productId)?.thumbnails[0] || ''
+
+  const handleDownload = (item: typeof orders[0]['items'][0], credential: string) => {
+    const product = getProduct(item.productId)
+    setDownloadItem({
+      title: item.title,
+      price: item.price,
+      licenseType: item.licenseType,
+      credential,
+      fileFormat: product?.fileFormat || '',
+      fileSize: product?.fileSize || '',
+    })
+    setModalOpen(true)
   }
 
   if (orders.length === 0) {
@@ -93,6 +117,7 @@ export default function PurchasesPage() {
                           <Eye className="w-4 h-4" />
                         </Link>
                         <button
+                          onClick={() => handleDownload(item, order.downloadCredential)}
                           className="p-2 rounded-lg text-surface-500 hover:text-emerald-400 hover:bg-surface-700 transition-all"
                           title="下载"
                         >
@@ -119,6 +144,19 @@ export default function PurchasesPage() {
           ))}
         </div>
       </motion.div>
+
+      {downloadItem && (
+        <DownloadModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          productTitle={downloadItem.title}
+          licenseType={downloadItem.licenseType}
+          price={downloadItem.price}
+          downloadCredential={downloadItem.credential}
+          fileFormat={downloadItem.fileFormat}
+          fileSize={downloadItem.fileSize}
+        />
+      )}
     </div>
   )
 }

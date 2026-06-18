@@ -9,6 +9,7 @@ interface StoreState {
   cart: CartItem[]
   orders: Order[]
   following: string[]
+  freeDownloads: Record<string, string>
   searchQuery: string
   selectedCategory: string
   selectedTags: string[]
@@ -32,6 +33,9 @@ interface StoreState {
   toggleFollow: (creatorId: string) => void
 
   addReview: (productId: string, rating: number, comment: string) => void
+  addProduct: (product: Omit<Product, 'id' | 'creator' | 'rating' | 'ratingCount' | 'downloadCount' | 'salesCount' | 'createdAt' | 'updatedAt' | 'status' | 'reviews'>) => void
+
+  getOrCreateFreeDownload: (productId: string) => string
 
   getFilteredProducts: () => Product[]
   getProductById: (id: string) => Product | undefined
@@ -46,6 +50,7 @@ export const useStore = create<StoreState>()(
       cart: [],
       orders: mockData.orders,
       following: mockData.currentUser.following,
+      freeDownloads: {},
       searchQuery: '',
       selectedCategory: 'all',
       selectedTags: [],
@@ -150,6 +155,53 @@ export const useStore = create<StoreState>()(
             return p
           }),
         })
+      },
+
+      addProduct: (productData) => {
+        const { products, currentUser } = get()
+        const newId = `p${products.length + 100}`
+        const today = new Date().toISOString().split('T')[0]
+        const creator = {
+          id: currentUser.id,
+          name: currentUser.name,
+          avatar: currentUser.avatar,
+          bio: '创意市集创作者',
+          followersCount: 0,
+          productsCount: 0,
+          totalSales: 0,
+          totalRevenue: 0,
+          joinedAt: today,
+        }
+        const newProduct: Product = {
+          id: newId,
+          ...productData,
+          creator,
+          rating: 0,
+          ratingCount: 0,
+          downloadCount: 0,
+          salesCount: 0,
+          createdAt: today,
+          updatedAt: today,
+          status: 'published',
+          reviews: [],
+        }
+        set({ products: [newProduct, ...products] })
+      },
+
+      getOrCreateFreeDownload: (productId) => {
+        const { freeDownloads } = get()
+        if (freeDownloads[productId]) {
+          return freeDownloads[productId]
+        }
+        const credential = `CRED-FREE-${Date.now()}`
+        set({ freeDownloads: { ...freeDownloads, [productId]: credential } })
+        const products = get().products
+        set({
+          products: products.map((p) =>
+            p.id === productId ? { ...p, downloadCount: p.downloadCount + 1 } : p
+          ),
+        })
+        return credential
       },
 
       getFilteredProducts: () => {

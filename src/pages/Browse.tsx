@@ -46,7 +46,19 @@ export default function Browse() {
     if (cat && CATEGORIES.includes(cat as Category)) {
       setSelectedCategory(cat)
     }
-  }, [searchParams, setSelectedCategory])
+    const lic = searchParams.get('license')
+    if (lic && LICENSE_OPTIONS.some((o) => o.value === lic)) {
+      setLicenseFilter(lic)
+    }
+    const sort = searchParams.get('sort')
+    if (sort && SORT_OPTIONS.some((o) => o.value === sort)) {
+      setSortBy(sort)
+    }
+    const q = searchParams.get('q')
+    if (q) {
+      setSearchQuery(q)
+    }
+  }, [searchParams, setSelectedCategory, setLicenseFilter, setSortBy, setSearchQuery])
 
   const allTags = useMemo(() => {
     const tagMap = new Map<string, number>()

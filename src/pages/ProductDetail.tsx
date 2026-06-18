@@ -5,10 +5,11 @@ import { Star, ShoppingCart, Download, Heart, ChevronLeft, ChevronRight, X, Send
 import { useStore } from '@/store'
 import { LicenseType } from '@/types'
 import ProductCard from '@/components/ProductCard'
+import DownloadModal from '@/components/DownloadModal'
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>()
-  const { getProductById, products, addToCart, toggleFollow, following, addReview } = useStore()
+  const { getProductById, products, addToCart, toggleFollow, following, addReview, getOrCreateFreeDownload } = useStore()
   const product = getProductById(id!)
 
   const [currentImg, setCurrentImg] = useState(0)
@@ -16,6 +17,8 @@ export default function ProductDetail() {
   const [license, setLicense] = useState<LicenseType>('personal')
   const [reviewRating, setReviewRating] = useState(5)
   const [reviewComment, setReviewComment] = useState('')
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false)
+  const [downloadCredential, setDownloadCredential] = useState('')
 
   if (!product) return <div className="flex items-center justify-center min-h-screen text-surface-400">产品未找到</div>
 
@@ -91,9 +94,20 @@ export default function ProductDetail() {
           </div>
 
           {product.isFree ? (
-            <button className="w-full btn-primary flex items-center justify-center gap-2"><Download className="w-5 h-5" />免费下载</button>
+            <button
+              onClick={() => {
+                const cred = getOrCreateFreeDownload(product.id)
+                setDownloadCredential(cred)
+                setDownloadModalOpen(true)
+              }}
+              className="w-full btn-primary flex items-center justify-center gap-2"
+            >
+              <Download className="w-5 h-5" />免费下载
+            </button>
           ) : (
-            <button onClick={() => addToCart(product, license)} className="w-full btn-primary flex items-center justify-center gap-2"><ShoppingCart className="w-5 h-5" />加入购物车</button>
+            <button onClick={() => addToCart(product, license)} className="w-full btn-primary flex items-center justify-center gap-2">
+              <ShoppingCart className="w-5 h-5" />加入购物车
+            </button>
           )}
 
           <div className="flex gap-6 text-sm text-surface-400">
@@ -181,6 +195,18 @@ export default function ProductDetail() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <DownloadModal
+        open={downloadModalOpen}
+        onClose={() => setDownloadModalOpen(false)}
+        productTitle={product.title}
+        licenseType="personal"
+        price={product.pricePersonal}
+        downloadCredential={downloadCredential}
+        fileFormat={product.fileFormat}
+        fileSize={product.fileSize}
+        isFree={product.isFree}
+      />
     </div>
   )
 }
