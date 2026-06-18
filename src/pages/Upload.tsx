@@ -1,13 +1,14 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Upload, Image, FileText, Tag, DollarSign, Shield, Check, X, ExternalLink } from 'lucide-react'
+import { Upload, Image, FileText, Tag, DollarSign, Shield, Check, X, ExternalLink, Save, Clock, Eye } from 'lucide-react'
 import { useStore } from '@/store'
-import { CATEGORY_LABELS, Category, LicenseType } from '@/types'
+import { CATEGORY_LABELS, Category, LicenseType, PRODUCT_STATUS_LABELS, Product } from '@/types'
 
 export default function UploadPage() {
-  const { addProduct, products } = useStore()
+  const { addProduct, saveDraft, submitForReview, getProductById, publishProduct, currentUser } = useStore()
   const navigate = useNavigate()
+  const { id } = useParams()
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -25,20 +26,42 @@ export default function UploadPage() {
   const [previewImages, setPreviewImages] = useState<string[]>([])
   const [submitted, setSubmitted] = useState(false)
   const [newProductId, setNewProductId] = useState('')
+  const [currentStatus, setCurrentStatus] = useState<'draft' | 'pending' | 'published' | 'offline' | null>(null)
+  const [saveMsg, setSaveMsg] = useState('')
 
   const categories: Category[] = ['figma', 'ppt', 'font', 'icon', 'code', 'notion', 'other']
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  useEffect(() => {
+    if (id) {
+      const product = getProductById(id)
+      if (product && product.creator.id === currentUser.id) {
+        setForm({
+          title: product.title,
+          description: product.description,
+          category: product.category,
+          tags: product.tags.join(', '),
+          isFree: product.isFree,
+          pricePersonal: product.pricePersonal,
+          priceCommercial: product.priceCommercial,
+          hasPersonal: product.licenseTypes.includes('personal'),
+          hasCommercial: product.licenseTypes.includes('commercial'),
+          fileFormat: product.fileFormat,
+          compatibility: product.compatibility,
+        })
+        setCurrentStatus(product.status)
+      }
+    }
+  }, [id, getProductById, currentUser.id])
+
+  const getProductData = () => {
     const tagsArr = form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : []
     const licenseTypes: LicenseType[] = []
     if (form.hasPersonal) licenseTypes.push('personal')
     if (form.hasCommercial) licenseTypes.push('commercial')
 
-    const newId = 'p' + (products.length + 100)
-    const thumbUrl = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(form.title + ' preview') + '&image_size=landscape_16_9'
+    const thumbUrl = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(form.title + ' creative digital product preview') + '&image_size=landscape_16_9'
 
-    addProduct({
+    const data: Omit<Product, 'creator' | 'id' | 'rating' | 'ratingCount' | 'downloadCount' | 'salesCount' | 'createdAt' | 'updatedAt' | 'status' | 'reviews'> = {
       title: form.title,
       description: form.description,
       category: form.category,
@@ -52,10 +75,58 @@ export default function UploadPage() {
       fileFormat: form.fileFormat || '.zip',
       fileSize: '未知',
       compatibility: form.compatibility || '全平台',
-    })
+    }
+    return data
+  }
 
-    setNewProductId(newId)
+  const showTempMsg = (msg: string) => {
+    setSaveMsg(msg)
+    setTimeout(() => setSaveMsg(''), 2000)
+  }
+
+  const handleSaveDraft = () => {
+    const productId = saveDraft(getProductData(), id)
+    setNewProductId(productId)
+    setCurrentStatus('draft')
+    showTempMsg('草稿已保存')
+  }
+
+  const handleSubmitForReview = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (id) {
+      saveDraft(getProductData(), id)
+      submitForReview(id)
+      setNewProductId(id)
+    } else {
+      const productId = addProduct(getProductData())
+      setNewProductId(productId)
+    }
+    setCurrentStatus('pending')
     setSubmitted(true)
+  }
+
+  const handleQuickPublish = () => {
+    if (id) {
+      saveDraft(getProductData(), id)
+      publishProduct(id)
+      setNewProductId(id)
+      setCurrentStatus('published')
+      setSubmitted(true)
+    }
+  }
+
+  const getStatusBadge = () => {
+    if (!currentStatus) return null
+    const colors: Record<string, string> = {
+      draft: 'bg-surface-600 text-surface-300',
+      pending: 'bg-amber-500/20 text-amber-400',
+      published: 'bg-emerald-500/20 text-emerald-400',
+    }
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-medium ${colors[currentStatus]}`}>
+        {PRODUCT_STATUS_LABELS[currentStatus]}
+      </span>
+    )
   }
 
   if (submitted) {
@@ -66,26 +137,55 @@ export default function UploadPage() {
           animate={{ opacity: 1, scale: 1 }}
           className="glass-card p-12 text-center max-w-md"
         >
-          <div className="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-6">
-            <Check className="w-10 h-10 text-emerald-400" />
+          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
+            currentStatus === 'published' ? 'bg-emerald-500/20' : 'bg-amber-500/20'
+          }`}>
+            {currentStatus === 'published' ? (
+              <Check className="w-10 h-10 text-emerald-400" />
+            ) : (
+              <Clock className="w-10 h-10 text-amber-400" />
+            )}
           </div>
-          <h2 className="text-2xl font-display font-bold text-surface-100 mb-3">作品发布成功</h2>
-          <p className="text-surface-400 mb-6">您的作品已成功上架，现在可以在首页、浏览页和创作者后台查看。</p>
+          <h2 className="text-2xl font-display font-bold text-surface-100 mb-3">
+            {currentStatus === 'published' ? '作品已上架' : '已提交审核'}
+          </h2>
+          <p className="text-surface-400 mb-6">
+            {currentStatus === 'published'
+              ? '您的作品已成功上架，现在可以在首页、浏览页和创作者后台查看。'
+              : '您的作品已进入审核队列，通常 1-3 个工作日内完成审核。审核通过后将自动上架。'}
+          </p>
           <div className="flex flex-col gap-3">
             <Link
               to={`/product/${newProductId}`}
               className="btn-primary flex items-center justify-center gap-2 text-sm"
             >
-              <ExternalLink className="w-4 h-4" /> 查看作品详情
+              <Eye className="w-4 h-4" /> 查看作品详情
             </Link>
             <Link
               to="/dashboard"
               className="btn-secondary flex items-center justify-center gap-2 text-sm"
             >
-              前往创作者后台
+              <ExternalLink className="w-4 h-4" /> 前往创作者后台
             </Link>
             <button
-              onClick={() => { setSubmitted(false); setForm({ ...form, title: '', description: '' }) }}
+              onClick={() => {
+                setSubmitted(false)
+                setForm({
+                  title: '',
+                  description: '',
+                  category: 'figma',
+                  tags: '',
+                  isFree: false,
+                  pricePersonal: 0,
+                  priceCommercial: 0,
+                  hasPersonal: true,
+                  hasCommercial: true,
+                  fileFormat: '',
+                  compatibility: '',
+                })
+                setCurrentStatus(null)
+                navigate('/upload')
+              }}
               className="text-sm text-surface-500 hover:text-surface-300 transition-colors"
             >
               继续上传其他作品
@@ -99,10 +199,27 @@ export default function UploadPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="section-title mb-2">发布作品</h1>
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="section-title mb-0">
+            {id ? '编辑作品' : '发布作品'}
+          </h1>
+          <div className="flex items-center gap-3">
+            {getStatusBadge()}
+            {saveMsg && (
+              <motion.span
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="text-sm text-emerald-400 flex items-center gap-1"
+              >
+                <Check className="w-4 h-4" /> {saveMsg}
+              </motion.span>
+            )}
+          </div>
+        </div>
         <p className="text-surface-400 mb-8">上传你的创意作品，设置价格和授权，开始赚取收入</p>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmitForReview} className="space-y-6">
           <div className="glass-card p-6">
             <h3 className="text-lg font-semibold text-surface-100 mb-4 flex items-center gap-2">
               <FileText className="w-5 h-5 text-brand-400" /> 基本信息
@@ -336,9 +453,26 @@ export default function UploadPage() {
             )}
           </div>
 
-          <div className="flex justify-end gap-3">
-            <button type="button" className="btn-secondary">保存草稿</button>
-            <button type="submit" className="btn-primary">提交审核</button>
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" /> 保存草稿
+            </button>
+            {currentStatus === 'draft' && (
+              <button
+                type="button"
+                onClick={handleQuickPublish}
+                className="btn-primary flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600"
+              >
+                <Check className="w-4 h-4" /> 立即发布
+              </button>
+            )}
+            <button type="submit" className="btn-primary flex items-center gap-2">
+              <Clock className="w-4 h-4" /> 提交审核
+            </button>
           </div>
         </form>
       </motion.div>

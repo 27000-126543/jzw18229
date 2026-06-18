@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, SlidersHorizontal, X, ChevronDown } from 'lucide-react'
@@ -22,9 +22,10 @@ const SORT_OPTIONS = [
 ]
 
 export default function Browse() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
+  const isInitializing = useRef(true)
 
   const {
     products,
@@ -38,27 +39,63 @@ export default function Browse() {
     setSelectedTags,
     setLicenseFilter,
     setSortBy,
+    resetFilters,
     getFilteredProducts,
   } = useStore()
 
   useEffect(() => {
     const cat = searchParams.get('category')
+    const lic = searchParams.get('license')
+    const sort = searchParams.get('sort')
+    const q = searchParams.get('q')
+    const tagsParam = searchParams.get('tags')
+
     if (cat && CATEGORIES.includes(cat as Category)) {
       setSelectedCategory(cat)
+    } else if (!cat) {
+      setSelectedCategory('all')
     }
-    const lic = searchParams.get('license')
+
     if (lic && LICENSE_OPTIONS.some((o) => o.value === lic)) {
       setLicenseFilter(lic)
+    } else if (!lic) {
+      setLicenseFilter('all')
     }
-    const sort = searchParams.get('sort')
+
     if (sort && SORT_OPTIONS.some((o) => o.value === sort)) {
       setSortBy(sort)
+    } else if (!sort) {
+      setSortBy('popular')
     }
-    const q = searchParams.get('q')
+
     if (q) {
       setSearchQuery(q)
+    } else if (!q) {
+      setSearchQuery('')
     }
-  }, [searchParams, setSelectedCategory, setLicenseFilter, setSortBy, setSearchQuery])
+
+    if (tagsParam) {
+      const tags = tagsParam.split(',').map((t) => t.trim()).filter(Boolean)
+      setSelectedTags(tags)
+    } else if (!tagsParam) {
+      setSelectedTags([])
+    }
+
+    isInitializing.current = false
+  }, [searchParams, setSelectedCategory, setLicenseFilter, setSortBy, setSearchQuery, setSelectedTags])
+
+  useEffect(() => {
+    if (isInitializing.current) return
+
+    const params: Record<string, string> = {}
+    if (selectedCategory !== 'all') params.category = selectedCategory
+    if (licenseFilter !== 'all') params.license = licenseFilter
+    if (sortBy !== 'popular') params.sort = sortBy
+    if (searchQuery) params.q = searchQuery
+    if (selectedTags.length > 0) params.tags = selectedTags.join(',')
+
+    setSearchParams(params, { replace: true })
+  }, [selectedCategory, licenseFilter, sortBy, searchQuery, selectedTags, setSearchParams])
 
   const allTags = useMemo(() => {
     const tagMap = new Map<string, number>()
@@ -75,11 +112,7 @@ export default function Browse() {
   }
 
   const clearFilters = () => {
-    setSearchQuery('')
-    setSelectedCategory('all')
-    setSelectedTags([])
-    setLicenseFilter('all')
-    setSortBy('popular')
+    resetFilters()
   }
 
   const hasActiveFilters = selectedCategory !== 'all' || selectedTags.length > 0 || licenseFilter !== 'all' || searchQuery
@@ -101,7 +134,7 @@ export default function Browse() {
       badges.push({ key: 'lic', label: opt?.label || licenseFilter, onRemove: () => setLicenseFilter('all') })
     }
     return badges
-  }, [selectedCategory, selectedTags, licenseFilter])
+  }, [selectedCategory, selectedTags, licenseFilter, setSelectedCategory, setLicenseFilter])
 
   const FilterPanel = () => (
     <div className="space-y-6">

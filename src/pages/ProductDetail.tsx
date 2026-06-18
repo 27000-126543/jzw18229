@@ -1,15 +1,15 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Star, ShoppingCart, Download, Heart, ChevronLeft, ChevronRight, X, Send, User } from 'lucide-react'
+import { Star, ShoppingCart, Download, Heart, ChevronLeft, ChevronRight, X, Send, User, FileCheck, Shield } from 'lucide-react'
 import { useStore } from '@/store'
-import { LicenseType } from '@/types'
+import { LicenseType, DownloadCertificate } from '@/types'
 import ProductCard from '@/components/ProductCard'
 import DownloadModal from '@/components/DownloadModal'
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>()
-  const { getProductById, products, addToCart, toggleFollow, following, addReview, getOrCreateFreeDownload } = useStore()
+  const { getProductById, products, addToCart, toggleFollow, following, addReview, getOrCreateFreeDownload, getCertificateByProductId } = useStore()
   const product = getProductById(id!)
 
   const [currentImg, setCurrentImg] = useState(0)
@@ -18,13 +18,14 @@ export default function ProductDetail() {
   const [reviewRating, setReviewRating] = useState(5)
   const [reviewComment, setReviewComment] = useState('')
   const [downloadModalOpen, setDownloadModalOpen] = useState(false)
-  const [downloadCredential, setDownloadCredential] = useState('')
+  const [selectedCertificate, setSelectedCertificate] = useState<DownloadCertificate | null>(null)
 
   if (!product) return <div className="flex items-center justify-center min-h-screen text-surface-400">产品未找到</div>
 
   const images = product.previewImages.length > 0 ? product.previewImages : product.thumbnails
   const isFollowing = following.includes(product.creator.id)
   const related = products.filter(p => p.category === product.category && p.id !== product.id && p.status === 'published').slice(0, 4)
+  const existingCert = useMemo(() => getCertificateByProductId(product.id), [product.id, getCertificateByProductId])
 
   const starDist = [5, 4, 3, 2, 1].map(s => {
     const count = product.reviews.filter(r => r.rating === s).length
@@ -36,6 +37,19 @@ export default function ProductDetail() {
     addReview(product.id, reviewRating, reviewComment.trim())
     setReviewComment('')
     setReviewRating(5)
+  }
+
+  const handleFreeDownload = () => {
+    const cert = getOrCreateFreeDownload(product.id)
+    setSelectedCertificate(cert)
+    setDownloadModalOpen(true)
+  }
+
+  const handleViewCertificate = () => {
+    if (existingCert) {
+      setSelectedCertificate(existingCert)
+      setDownloadModalOpen(true)
+    }
   }
 
   return (
@@ -94,16 +108,40 @@ export default function ProductDetail() {
           </div>
 
           {product.isFree ? (
-            <button
-              onClick={() => {
-                const cred = getOrCreateFreeDownload(product.id)
-                setDownloadCredential(cred)
-                setDownloadModalOpen(true)
-              }}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <Download className="w-5 h-5" />免费下载
-            </button>
+            <div className="space-y-3">
+              {existingCert ? (
+                <>
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-3">
+                    <FileCheck className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-emerald-400">您已领取此免费作品</p>
+                      <p className="text-xs text-emerald-400/70">凭证号: {existingCert.credential.slice(-8)}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={handleFreeDownload}
+                      className="w-full btn-primary flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-5 h-5" />下载资源
+                    </button>
+                    <button
+                      onClick={handleViewCertificate}
+                      className="w-full btn-secondary flex items-center justify-center gap-2"
+                    >
+                      <Shield className="w-5 h-5" />查看证书
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={handleFreeDownload}
+                  className="w-full btn-primary flex items-center justify-center gap-2"
+                >
+                  <Download className="w-5 h-5" />免费下载
+                </button>
+              )}
+            </div>
           ) : (
             <button onClick={() => addToCart(product, license)} className="w-full btn-primary flex items-center justify-center gap-2">
               <ShoppingCart className="w-5 h-5" />加入购物车
@@ -199,13 +237,7 @@ export default function ProductDetail() {
       <DownloadModal
         open={downloadModalOpen}
         onClose={() => setDownloadModalOpen(false)}
-        productTitle={product.title}
-        licenseType="personal"
-        price={product.pricePersonal}
-        downloadCredential={downloadCredential}
-        fileFormat={product.fileFormat}
-        fileSize={product.fileSize}
-        isFree={product.isFree}
+        certificate={selectedCertificate}
       />
     </div>
   )

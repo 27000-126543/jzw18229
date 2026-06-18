@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Product, CartItem, LicenseType, User, Order } from '@/types'
+import { Product, CartItem, LicenseType, User, Order, DownloadCertificate, TrendData, ProductStatus } from '@/types'
 import { mockData } from '@/data/mock'
 
 interface StoreState {
@@ -10,6 +10,7 @@ interface StoreState {
   orders: Order[]
   following: string[]
   freeDownloads: Record<string, string>
+  downloadCertificates: DownloadCertificate[]
   searchQuery: string
   selectedCategory: string
   selectedTags: string[]
@@ -23,23 +24,34 @@ interface StoreState {
   setPriceRange: (range: [number, number]) => void
   setSortBy: (sort: string) => void
   setLicenseFilter: (f: string) => void
+  resetFilters: () => void
 
   addToCart: (product: Product, licenseType: LicenseType) => void
   removeFromCart: (productId: string) => void
   updateCartLicense: (productId: string, licenseType: LicenseType) => void
   clearCart: () => void
 
-  placeOrder: () => void
+  placeOrder: () => Order | null
   toggleFollow: (creatorId: string) => void
 
   addReview: (productId: string, rating: number, comment: string) => void
-  addProduct: (product: Omit<Product, 'id' | 'creator' | 'rating' | 'ratingCount' | 'downloadCount' | 'salesCount' | 'createdAt' | 'updatedAt' | 'status' | 'reviews'>) => void
 
-  getOrCreateFreeDownload: (productId: string) => string
+  saveDraft: (productData: Omit<Product, 'id' | 'creator' | 'rating' | 'ratingCount' | 'downloadCount' | 'salesCount' | 'createdAt' | 'updatedAt' | 'status' | 'reviews'>, existingId?: string) => string
+  submitForReview: (productId: string) => void
+  publishProduct: (productId: string) => void
+  updateProductStatus: (productId: string, status: ProductStatus) => void
+  addProduct: (productData: Omit<Product, 'id' | 'creator' | 'rating' | 'ratingCount' | 'downloadCount' | 'salesCount' | 'createdAt' | 'updatedAt' | 'status' | 'reviews'>) => string
+
+  getOrCreateFreeDownload: (productId: string) => DownloadCertificate
+  getDownloadCertificates: () => DownloadCertificate[]
+  getCertificateByProductId: (productId: string) => DownloadCertificate | undefined
 
   getFilteredProducts: () => Product[]
+  getProductsByCreator: (creatorId: string, status?: ProductStatus) => Product[]
   getProductById: (id: string) => Product | undefined
   getCartTotal: () => number
+  getCreatorStats: (creatorId: string) => { totalSales: number; totalRevenue: number; totalDownloads: number; totalProducts: number }
+  getTrendData: (creatorId: string, days?: number) => TrendData[]
 }
 
 export const useStore = create<StoreState>()(
@@ -51,6 +63,7 @@ export const useStore = create<StoreState>()(
       orders: mockData.orders,
       following: mockData.currentUser.following,
       freeDownloads: {},
+      downloadCertificates: [],
       searchQuery: '',
       selectedCategory: 'all',
       selectedTags: [],
@@ -64,6 +77,14 @@ export const useStore = create<StoreState>()(
       setPriceRange: (range) => set({ priceRange: range }),
       setSortBy: (sort) => set({ sortBy: sort }),
       setLicenseFilter: (f) => set({ licenseFilter: f }),
+      resetFilters: () => set({
+        searchQuery: '',
+        selectedCategory: 'all',
+        selectedTags: [],
+        priceRange: [0, 500],
+        sortBy: 'popular',
+        licenseFilter: 'all',
+      }),
 
       addToCart: (product, licenseType) => {
         const cart = get().cart
@@ -105,11 +126,17 @@ export const useStore = create<StoreState>()(
       clearCart: () => set({ cart: [] }),
 
       placeOrder: () => {
-        const { cart, orders } = get()
-        if (cart.length === 0) return
+        const { cart, orders, currentUser, downloadCertificates } = get()
+        if (cart.length === 0) return null
+
+        const today = new Date().toISOString().split('T')[0]
+        const expiryDate = new Date()
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+        const expiryStr = expiryDate.toISOString().split('T')[0]
+
         const newOrder: Order = {
-          id: `o${orders.length + 1}`,
-          userId: get().currentUser.id,
+          id: `o${orders.length + 100}`,
+          userId: currentUser.id,
           items: cart.map((item) => ({
             productId: item.productId,
             title: item.title,
@@ -119,10 +146,52 @@ export const useStore = create<StoreState>()(
           })),
           totalAmount: get().getCartTotal(),
           status: 'completed',
-          createdAt: new Date().toISOString().split('T')[0],
+          createdAt: today,
           downloadCredential: `CRED-${Date.now()}`,
         }
-        set({ orders: [...orders, newOrder], cart: [] })
+
+        const newCertificates: DownloadCertificate[] = cart.map((item) => {
+          const product = get().getProductById(item.productId)
+          return {
+            id: `cert-${Date.now()}-${item.productId}`,
+            productId: item.productId,
+            productTitle: item.title,
+            thumbnail: item.thumbnail,
+            licenseType: item.licenseType,
+            price: item.licenseType === 'commercial' ? item.priceCommercial : item.pricePersonal,
+            isFree: false,
+            credential: `CERT-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
+            downloadedAt: today,
+            expiresAt: expiryStr,
+            fileFormat: product?.fileFormat || '.zip',
+            fileSize: product?.fileSize || '未知',
+            buyerName: currentUser.name,
+            buyerEmail: currentUser.email,
+          }
+        })
+
+        const products = get().products
+        const updatedProducts = products.map((p) => {
+          const cartItem = cart.find((ci) => ci.productId === p.id)
+          if (cartItem) {
+            return {
+              ...p,
+              salesCount: p.salesCount + 1,
+              downloadCount: p.downloadCount + 1,
+              updatedAt: today,
+            }
+          }
+          return p
+        })
+
+        set({
+          orders: [...orders, newOrder],
+          cart: [],
+          downloadCertificates: [...downloadCertificates, ...newCertificates],
+          products: updatedProducts,
+        })
+
+        return newOrder
       },
 
       toggleFollow: (creatorId) => {
@@ -157,6 +226,80 @@ export const useStore = create<StoreState>()(
         })
       },
 
+      saveDraft: (productData, existingId) => {
+        const { products, currentUser } = get()
+        const today = new Date().toISOString().split('T')[0]
+        const creator = {
+          id: currentUser.id,
+          name: currentUser.name,
+          avatar: currentUser.avatar,
+          bio: '创意市集创作者',
+          followersCount: 0,
+          productsCount: 0,
+          totalSales: 0,
+          totalRevenue: 0,
+          joinedAt: today,
+        }
+
+        if (existingId) {
+          set({
+            products: products.map((p) =>
+              p.id === existingId
+                ? { ...p, ...productData, updatedAt: today, status: 'draft' as ProductStatus }
+                : p
+            ),
+          })
+          return existingId
+        }
+
+        const newId = `p${products.length + 1000}`
+        const newProduct: Product = {
+          id: newId,
+          ...productData,
+          creator,
+          rating: 0,
+          ratingCount: 0,
+          downloadCount: 0,
+          salesCount: 0,
+          createdAt: today,
+          updatedAt: today,
+          status: 'draft',
+          reviews: [],
+        }
+        set({ products: [newProduct, ...products] })
+        return newId
+      },
+
+      submitForReview: (productId) => {
+        const { products } = get()
+        const today = new Date().toISOString().split('T')[0]
+        set({
+          products: products.map((p) =>
+            p.id === productId ? { ...p, status: 'pending' as ProductStatus, updatedAt: today } : p
+          ),
+        })
+      },
+
+      publishProduct: (productId) => {
+        const { products } = get()
+        const today = new Date().toISOString().split('T')[0]
+        set({
+          products: products.map((p) =>
+            p.id === productId ? { ...p, status: 'published' as ProductStatus, updatedAt: today } : p
+          ),
+        })
+      },
+
+      updateProductStatus: (productId, status) => {
+        const { products } = get()
+        const today = new Date().toISOString().split('T')[0]
+        set({
+          products: products.map((p) =>
+            p.id === productId ? { ...p, status, updatedAt: today } : p
+          ),
+        })
+      },
+
       addProduct: (productData) => {
         const { products, currentUser } = get()
         const newId = `p${products.length + 100}`
@@ -182,26 +325,63 @@ export const useStore = create<StoreState>()(
           salesCount: 0,
           createdAt: today,
           updatedAt: today,
-          status: 'published',
+          status: 'pending',
           reviews: [],
         }
         set({ products: [newProduct, ...products] })
+        return newId
       },
 
       getOrCreateFreeDownload: (productId) => {
-        const { freeDownloads } = get()
-        if (freeDownloads[productId]) {
-          return freeDownloads[productId]
+        const { downloadCertificates, currentUser } = get()
+        const existing = downloadCertificates.find((c) => c.productId === productId && c.isFree)
+        if (existing) {
+          return existing
         }
-        const credential = `CRED-FREE-${Date.now()}`
-        set({ freeDownloads: { ...freeDownloads, [productId]: credential } })
+
+        const product = get().getProductById(productId)
+        if (!product) {
+          throw new Error('Product not found')
+        }
+
+        const today = new Date().toISOString().split('T')[0]
+        const expiryDate = new Date()
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+        const expiryStr = expiryDate.toISOString().split('T')[0]
+
+        const certificate: DownloadCertificate = {
+          id: `cert-free-${Date.now()}-${productId}`,
+          productId,
+          productTitle: product.title,
+          thumbnail: product.thumbnails[0],
+          licenseType: 'personal',
+          price: 0,
+          isFree: true,
+          credential: `CERT-FREE-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
+          downloadedAt: today,
+          expiresAt: expiryStr,
+          fileFormat: product.fileFormat,
+          fileSize: product.fileSize,
+          buyerName: currentUser.name,
+          buyerEmail: currentUser.email,
+        }
+
         const products = get().products
         set({
+          downloadCertificates: [...downloadCertificates, certificate],
+          freeDownloads: { ...get().freeDownloads, [productId]: certificate.credential },
           products: products.map((p) =>
-            p.id === productId ? { ...p, downloadCount: p.downloadCount + 1 } : p
+            p.id === productId ? { ...p, downloadCount: p.downloadCount + 1, updatedAt: today } : p
           ),
         })
-        return credential
+
+        return certificate
+      },
+
+      getDownloadCertificates: () => get().downloadCertificates,
+
+      getCertificateByProductId: (productId) => {
+        return get().downloadCertificates.find((c) => c.productId === productId)
       },
 
       getFilteredProducts: () => {
@@ -261,6 +441,14 @@ export const useStore = create<StoreState>()(
         return filtered
       },
 
+      getProductsByCreator: (creatorId, status) => {
+        let products = get().products.filter((p) => p.creator.id === creatorId)
+        if (status) {
+          products = products.filter((p) => p.status === status)
+        }
+        return products.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      },
+
       getProductById: (id) => get().products.find((p) => p.id === id),
 
       getCartTotal: () => {
@@ -268,13 +456,60 @@ export const useStore = create<StoreState>()(
           return total + (item.licenseType === 'commercial' ? item.priceCommercial : item.pricePersonal)
         }, 0)
       },
+
+      getCreatorStats: (creatorId) => {
+        const products = get().products.filter((p) => p.creator.id === creatorId)
+        const totalProducts = products.length
+        const totalSales = products.reduce((sum, p) => sum + p.salesCount, 0)
+        const totalDownloads = products.reduce((sum, p) => sum + p.downloadCount, 0)
+        const totalRevenue = products.reduce((sum, p) => sum + (p.salesCount * (p.isFree ? 0 : p.pricePersonal) * 0.85), 0)
+        return { totalSales, totalRevenue: Math.round(totalRevenue * 100) / 100, totalDownloads, totalProducts }
+      },
+
+      getTrendData: (creatorId, days = 7) => {
+        const products = get().products.filter((p) => p.creator.id === creatorId)
+        const trend: TrendData[] = []
+
+        for (let i = days - 1; i >= 0; i--) {
+          const date = new Date()
+          date.setDate(date.getDate() - i)
+          const dateStr = date.toISOString().split('T')[0]
+          const dayOfWeek = date.toLocaleDateString('zh-CN', { weekday: 'short' })
+
+          const isToday = i === 0
+          const multiplier = isToday ? 1 : (0.3 + Math.random() * 0.7)
+
+          const baseDownloads = products.reduce((sum, p) => sum + Math.floor(p.downloadCount / 30), 0)
+          const baseSales = products.reduce((sum, p) => sum + Math.floor(p.salesCount / 30), 0)
+          const baseRevenue = baseSales * (products[0]?.pricePersonal || 10) * 0.85
+
+          trend.push({
+            date: dayOfWeek,
+            downloads: Math.max(0, Math.floor(baseDownloads * multiplier)),
+            sales: Math.max(0, Math.floor(baseSales * multiplier)),
+            revenue: Math.max(0, Math.round(baseRevenue * multiplier * 100) / 100),
+          })
+        }
+
+        if (trend.length > 0) {
+          const today = trend[trend.length - 1]
+          today.downloads = Math.max(today.downloads, products.reduce((sum, p) => sum + (p.salesCount > 0 ? 1 : 0), 0))
+          today.sales = Math.max(today.sales, products.reduce((sum, p) => sum + (p.salesCount > 0 ? 1 : 0), 0))
+          today.revenue = Math.max(today.revenue, products.reduce((sum, p) => sum + (p.salesCount > 0 ? (p.isFree ? 0 : p.pricePersonal * 0.85) : 0), 0))
+        }
+
+        return trend
+      },
     }),
     {
       name: 'creativemart-store',
       partialize: (state) => ({
+        products: state.products,
         cart: state.cart,
         orders: state.orders,
         following: state.following,
+        freeDownloads: state.freeDownloads,
+        downloadCertificates: state.downloadCertificates,
       }),
     }
   )

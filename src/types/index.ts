@@ -69,6 +69,23 @@ export interface Order {
   downloadCredential: string
 }
 
+export interface DownloadCertificate {
+  id: string
+  productId: string
+  productTitle: string
+  thumbnail: string
+  licenseType: LicenseType
+  price: number
+  isFree: boolean
+  credential: string
+  downloadedAt: string
+  expiresAt: string
+  fileFormat: string
+  fileSize: string
+  buyerName: string
+  buyerEmail: string
+}
+
 export interface User {
   id: string
   name: string
@@ -111,6 +128,13 @@ export interface CartItem {
   priceCommercial: number
   licenseType: LicenseType
   creatorName: string
+}
+
+export const PRODUCT_STATUS_LABELS: Record<string, string> = {
+  draft: '草稿',
+  pending: '审核中',
+  published: '已上架',
+  offline: '已下架',
 }
 
 export const CATEGORY_LABELS: Record<Category, string> = {
